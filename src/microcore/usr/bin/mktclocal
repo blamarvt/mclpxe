@@ -1,0 +1,51 @@
+#!/bin/sh
+. /etc/init.d/tc-functions
+TMP="/tmp/mktclocal.$$"
+TMP2="/tmp/mktclocal2.$$"
+
+awk '/mnt/{printf "%s %s\n",$1,$2}' /etc/fstab|sort -n > "$TMP"
+while read F; do
+ if grep -qv "${F% *}" /etc/sysconfig/cdroms; then echo $F >> "$TMP2"; fi
+done < "$TMP"
+mv "$TMP2" "$TMP"
+
+echo "${GREEN}"
+select "mktclocal - Choose Device/partition for Hybrid Mode" "$TMP"
+echo "${NORMAL}"
+ANSWER=`cat /tmp/select.ans`;rm "$TMP"
+[ "$ANSWER" == "q" ] && exit 1
+
+DEVICE="$ANSWER"
+LOCAL_DEVICE="${DEVICE##/*/}"
+[ -z "$LOCAL_DEVICE" ] && exit 1
+find_mountpoint "$LOCAL_DEVICE"
+if [ -n "$MOUNTPOINT" ]; then
+   if [ "$MOUNTED" == "no" ]; then
+      mount "$MOUNTPOINT"
+   fi
+fi
+
+echo "Directory" > "$TMP"; echo "File" >> "$TMP"
+echo "${GREEN}"
+select "mktclocal - Choose tclocal type"  "$TMP" 0
+echo "${NORMAL}"
+ANSWER=`cat /tmp/select.ans`;rm "$TMP"
+[ "$ANSWER" == "q" ] && exit 1
+[ "$ANSWER" -eq 1 ] && mkdir /mnt/"$LOCAL_DEVICE"/tclocal && exit 0
+
+AVAIL="$(df -m /dev/"$LOCAL_DEVICE" | awk '/^\/dev\//{print $4}')"
+echo "${GREEN}Please specify the amount of diskspace in megabytes that you want to use"
+echo "as the local mount. Recommended: ${YELLOW}256${NORMAL}."
+echo
+
+ANSWER=""
+until [ "$ANSWER" == "q" ] || ( [ "$ANSWER" -gt 1 ] && [ "$ANSWER" -lt "$AVAIL" ] ); do
+  echo -n "${GREEN}Free on /dev/$LOCAL_DEVICE is ${YELLOW}$AVAIL${NORMAL}: "; read ANSWER
+done
+[ "$ANSWER" == "q" ] && exit 1
+
+echo "${GREEN}Creating mountable local file on on /mnt/"$LOCAL_DEVICE".  This may take a while...${NORMAL}"
+dd if=/dev/zero of=/mnt/"$LOCAL_DEVICE"/tclocal bs=1000k count="$ANSWER" &&
+echo "${GREEN}Formatting local file as ext2.${NORMAL}"
+mke2fs -m0 -F /mnt/"$LOCAL_DEVICE"/tclocal 2>/dev/null
+#mount -o loop /mnt/"$LOCAL_DEVICE"/tclocal /usr/local

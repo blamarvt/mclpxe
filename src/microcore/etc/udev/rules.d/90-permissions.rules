@@ -1,0 +1,8 @@
+
+# sound devices
+SUBSYSTEM=="sound",				GROUP="staff"
+SUBSYSTEM=="sound",				MODE="0664"
+
+# usb devices
+SUBSYSTEM=="usb",				GROUP="staff"
+SUBSYSTEM=="usb",				MODE="0664"

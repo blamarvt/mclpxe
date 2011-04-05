@@ -1,0 +1,15 @@
+Micro Core accepts the following persistence options:
+
+ microcore tce={hda1|sda1}            Specify Restore TCE apps directory
+ microcore restore={hda1|sda1|floppy} Specify saved configuration location
+ microcore waitusb=X                  Wait X seconds for slow USB devices
+ microcore swapfile{=hda1}            Scan or Specify swapfile
+ microcore home={hda1|sda1}           Specify persistent home directory
+ microcore opt={hda1|sda1}            Specify persistent opt directory
+ microcore local={hda1|sda1}          Specify PPI directory or loopback file
+ microcore lst=yyy.lst                Load alternate static yyy.lst on boot
+ microcore base                       Skip TCE load only the base system
+ microcore norestore                  Turn off the automatic restore
+ microcore safebackup                 Saves a backup copy (mydatabk.tgz)
+ microcore showapps                   Display application names when booting
+ 

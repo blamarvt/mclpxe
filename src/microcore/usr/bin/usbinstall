@@ -1,0 +1,389 @@
+#!/bin/sh
+# (c) Robert Shingledecker 2005-2009
+
+. /etc/init.d/tc-functions
+
+abort(){
+  if [ "$DISPLAY" ]; then
+    echo -n "Press Enter key."
+    read gagme
+  fi
+  exit 1
+}
+
+checkroot
+
+TCEINSTALLED=/usr/local/tce.installed
+export PATH="$PATH:."
+
+usbhdd_setup(){
+  echo -n "${BLUE}Writing zero's to beginning of ${MAGENTA}/dev/$DEVICE${NORMAL} "
+  dd if=/dev/zero of=/dev/$DEVICE bs=1k count=1 >/dev/null 2>&1 &
+  rotdash $!
+  echo " Done."
+  sync
+  echo "${BLUE}Partitioning ${MAGENTA}/dev/$DEVICE${NORMAL}"
+  fdisk /dev/$DEVICE << EOF >/dev/null 2>&1
+n
+p
+1
+
+
+a
+1
+t
+6
+w
+EOF
+  sync; sleep 5
+  hdparm -z /dev/$DEVICE
+  sync; sleep 5
+  echo "${BLUE}Formatting ${MAGENTA}/dev/$TARGET${NORMAL}"
+  /usr/local/sbin/mkdosfs /dev/$TARGET
+  sync; sleep 5
+  dd if=/usr/local/share/syslinux/mbr.bin of=/dev/$DEVICE
+  sync; sleep 5
+}
+usbzip_setup(){
+   echo "${BLUE}Changing geometry for USB-ZIP compatibility on ${MAGENTA}/dev/$DEVICE${NORMAL}"
+   /usr/local/bin/mkdiskimage -1 /dev/$DEVICE 16 64 32
+   if [ $? != 0 ]; then
+      echo "Error creating USB-ZIP compatible filesystem."
+      abort
+   fi
+# Use remaining pendrive for backup/restore and tce
+#
+   DATA="$DEVICE"2
+   echo "${BLUE}Partitioning ${MAGENTA}/dev/$DEVICE${NORMAL}"
+   fdisk /dev/$DEVICE << EOF >/dev/null 2>&1
+n
+p
+2
+
+
+t
+2
+b
+w
+EOF
+   sync; sleep 5
+   hdparm -z /dev/$DEVICE
+   sync; sleep 5
+   echo "${BLUE}Formatting ${MAGENTA}/dev/$DATA${NORMAL}"
+   mkdosfs /dev/$DATA
+   sync; sleep 5
+#
+   echo "${BLUE}Formatting ${MAGENTA}/dev/$TARGET${NORMAL}"
+   mkdosfs /dev/$TARGET
+   if [ $? != 0 ]; then
+      echo "Error while formatting DOS filesystem."
+      abort
+   fi
+   sync; sleep 5
+   echo "${BLUE}Setting up boot loader on ${MAGENTA}/mnt/$TARGET${NORMAL}"
+   syslinux  /dev/$TARGET
+   if [ $? != 0 ]; then
+      echo "Error writing boot sector"
+      abort
+   fi
+   sync; sleep 5
+}
+
+usbext_setup(){
+  echo -n "${BLUE}Writing zero's to beginning of ${MAGENTA}/dev/$DEVICE${NORMAL} "
+  dd if=/dev/zero of=/dev/$DEVICE bs=1k count=1 >/dev/null 2>&1 &
+  rotdash $!
+  echo " Done."
+  sync
+  echo "${BLUE}Partitioning ${MAGENTA}/dev/$DEVICE${NORMAL}"
+  fdisk /dev/$DEVICE << EOF >/dev/null 2>&1
+n
+p
+1
+
+
+a
+1
+t
+83
+w
+EOF
+  sync;sleep 5
+  hdparm -z /dev/$DEVICE
+  sync;sleep 8
+  echo "${BLUE}Formatting ${MAGENTA}/dev/$TARGET${NORMAL}"
+  /sbin/mke2fs -m 0 /dev/$TARGET
+  sync;sleep 5
+  dd if=/usr/local/share/syslinux/mbr.bin of=/dev/$DEVICE
+  sync; sleep 5
+}
+
+usbhdd_update(){
+  echo "${BLUE}Applying syslinux to pendrive partition.${NORMAL}"
+  /usr/local/bin/syslinux /dev/$TARGET
+  sync; sleep 5
+
+  echo -n "${BLUE}Setting up $ROOTFS image on ${MAGENTA}/mnt/$TARGET${NORMAL}..."
+  [ -d /mnt/pendrive ] || mkdir /mnt/pendrive
+  mount -t vfat /dev/$TARGET /mnt/pendrive
+  if [ $? != 0 ]; then
+     echo "Error mounting usb device"
+     abort
+  fi
+  [ -d /mnt/pendrive/boot ] || mkdir /mnt/pendrive/boot
+  [ -d /mnt/pendrive/tce ] || mkdir /mnt/pendrive/tce
+  cp  $BOOT/bzImage /mnt/pendrive/boot
+  cp  $BOOT/"$ROOTFS".gz /mnt/pendrive/boot
+  echo "DEFAULT $ROOTFS" > /mnt/pendrive/syslinux.cfg
+  echo "LABEL $ROOTFS" >> /mnt/pendrive/syslinux.cfg
+  echo "KERNEL /boot/bzImage" >> /mnt/pendrive/syslinux.cfg
+  echo "APPEND initrd=/boot/$ROOTFS.gz quiet waitusb=5:"$TARGETUUID" tce="$TARGETUUID" " >> /mnt/pendrive/syslinux.cfg
+  sync
+  [ -f /mnt/pendrive/tce/mydata.tgz ] || touch /mnt/pendrive/tce/mydata.tgz
+  sed -i s"~quiet~quiet $DAEMONS~" /mnt/pendrive/syslinux.cfg
+  sync
+  echo " Done."
+  umount /mnt/pendrive
+  echo "${GREEN}USB HDD installation has completed${NORMAL}"
+}
+
+usbzip_update(){
+  DATA="$DEVICE"2
+  DATAUUID=`/sbin/blkid -s UUID /dev/"$DATA"|cut -f2 -d\ `
+  echo "${BLUE}Setting up boot image on ${MAGENTA}/mnt/$TARGET${NORMAL}"
+  [ -d /mnt/pendrive ] || mkdir /mnt/pendrive
+  mount -t vfat /dev/$TARGET /mnt/pendrive
+  if [ $? != 0 ]; then
+    echo "Error mounting usb device partition 1"
+    abort
+  fi
+  echo -n "${BLUE}Setting up $ROOTFS image on ${MAGENTA}/mnt/$TARGET${NORMAL}..."
+  cp  $BOOT/bzImage /mnt/pendrive/
+  cp  $BOOT/"$ROOTFS".gz /mnt/pendrive
+  sync; sleep 5
+  echo "DEFAULT $ROOTFS" > /mnt/pendrive/syslinux.cfg
+  echo "LABEL $ROOTFS" >> /mnt/pendrive/syslinux.cfg
+  echo "KERNEL bzImage" >> /mnt/pendrive/syslinux.cfg
+  echo "APPEND initrd=$ROOTFS.gz quiet waitusb=5:"$DATAUUID" tce="$DATAUUID" " >> /mnt/pendrive/syslinux.cfg
+  sync; sleep 5
+  sed -i s"~quiet~quiet $DAEMONS~" /mnt/pendrive/syslinux.cfg
+  sync; sleep 5
+  echo " Done."
+  umount /mnt/pendrive
+  mount -t vfat /dev/$DATA /mnt/pendrive
+  if [ $? != 0 ]; then
+    echo "Error mounting usb device partition 2"
+    abort
+  fi
+  [ -d /mnt/pendrive/tce ] || mkdir /mnt/pendrive/tce
+  [ -f /mnt/pendrive/tce/mydata.tgz ] || touch /mnt/pendrive/tce/mydata.tgz
+  umount /mnt/pendrive
+  echo "${GREEN}USB ZIP installation has completed${NORMAL}"
+}
+
+usbext_update(){
+  [ -d /mnt/pendrive ] || mkdir /mnt/pendrive
+  mount /dev/$TARGET /mnt/pendrive
+  if [ $? != 0 ]; then
+    echo "Error mounting usb device"
+    abort
+  fi
+
+  echo "${BLUE}Applying extlinux to pendrive partition.${NORMAL}"
+  [ -d /mnt/pendrive/boot/extlinux ] || mkdir -p /mnt/pendrive/boot/extlinux
+  /usr/local/sbin/extlinux -i /mnt/pendrive/boot/extlinux
+  sync; sleep 5
+
+  echo -n "${BLUE}Setting up $ROOTFS image on ${MAGENTA}/mnt/$TARGET${NORMAL}..."
+  [ -d /mnt/pendrive/tce ] || mkdir /mnt/pendrive/tce
+  cp  $BOOT/bzImage /mnt/pendrive/boot
+  cp  $BOOT/"$ROOTFS".gz /mnt/pendrive/boot
+  echo "DEFAULT $ROOTFS" > /mnt/pendrive/boot/extlinux/extlinux.conf
+  echo "LABEL $ROOTFS" >> /mnt/pendrive/boot/extlinux/extlinux.conf
+  echo "KERNEL /boot/bzImage" >> /mnt/pendrive/boot/extlinux/extlinux.conf
+  echo "APPEND initrd=/boot/$ROOTFS.gz quiet waitusb=5:"$TARGETUUID" tce="$TARGETUUID" " >> /mnt/pendrive/boot/extlinux/extlinux.conf
+  sync
+  [ -f /mnt/pendrive/tce/mydata.tgz ] || touch /mnt/pendrive/tce/mydata.tgz
+  sed -i s"~quiet~quiet $DAEMONS~" /mnt/pendrive/boot/extlinux/extlinux.conf
+  sync
+  echo " Done."
+  umount /mnt/pendrive
+  echo "${GREEN}USB EXT installation has completed${NORMAL}"
+}
+
+echo
+echo "${RED}Tiny Core ${WHITE}pendrive BIOS boot ${BLUE}installation/update.${NORMAL}"
+echo
+echo "Ext"
+echo "* Your BIOS must support USB-HDD booting."
+echo "* A single EXT2 partition will be made."
+echo "* ${YELLOW}May be used for a whole hard disk installation.${NORMAL}"
+echo
+echo "HDD"
+echo "* Your BIOS must support USB-HDD booting."
+echo "* A single FAT partition will be made."
+echo
+echo "Zip"
+echo "* Your pendrive will be formatted into two FAT partitions."
+echo "* One small one for USB_ZIP boot compatibility, and used to hold Tiny Core."
+echo "* The remaining partition will be used for backup & extensions."
+echo
+echo -n "${CYAN}Use USB Boot type [E]xt, [H]DD, [Z]ip. ${YELLOW}(e/h/z): ${NORMAL}"
+read TYPE
+case "$TYPE" in
+  "H" | "h")
+    TYPE="HDD"
+  ;;
+  "Z" | "z")
+    TYPE="ZIP"
+    [ `find "$TCEINSTALLED" -name "perl5*"` ] || MISSING="perl5 "
+  ;;
+  "E" | "e")
+    TYPE="EXT"
+  ;;
+  *)
+    echo "Invalid Boot type."
+    abort
+esac
+echo "* Do not have your pendrive mounted."
+echo
+echo "${YELLOW}No responsibility for data loss or hardware damage!${NORMAL}"
+echo
+
+[ $TYPE == "EXT" ] || [ `find "$TCEINSTALLED" -name "dosfstools*"` ] || MISSING="$MISSING dosfstools "
+[ `find "$TCEINSTALLED" -name "syslinux*"` ] || MISSING="$MISSING syslinux "
+if [ -n "$MISSING" ]; then
+  echo "The following extension(s) are required: $MISSING"
+  echo
+  echo "If you do not normally require these extensions, then"
+  echo "You may wish to boot into cloud mode to perform the"
+  echo "installation or possibly use 'Download Only' and then"
+  echo "File/Install Local each one for a one time use."
+  echo
+  abort
+fi
+
+# Check to help the user avoid accidentally installing to the wrong devicename
+echo -n "${CYAN}Display your USB storage device information log? ${YELLOW}(Y/n): ${NORMAL}"
+read ANSWER
+if [ "$ANSWER" != "n" ] && [ "$ANSWER" != "N" ] ; then
+  SEPARATOR="--------------------------------------------------------"
+  dmesg | grep  -B 11 "Attached SCSI removable disk"
+fi
+ANSWER=
+
+echo -n "${CYAN}Enter the device name of pendrive.${WHITE}(EXAMPLE: ${YELLOW}sda): ${NORMAL}"
+read DEVICE
+if [ -z "$DEVICE" ] ; then
+  echo "No device chosen. The script will be terminated."
+  abort
+fi
+
+grep -q ^/dev/"$DEVICE" /etc/mtab
+if [ "$?" == 0  ]; then
+  echo "$DEVICE appears to have a partition already mounted!"
+  echo "Check if correct device, if so,  umount it."
+  abort
+fi
+
+TARGET="$DEVICE"1
+
+INSTALL=""
+until [ "$INSTALL" == "i" ] || [ "$INSTALL" == "u" ]; do
+   echo -n "${CYAN}Is this an installation or upgrade? ${NORMAL}(i,u) "; read INSTALL
+done
+
+echo -n "${CYAN}Use Tiny Core from mounted and [R]unning OS, or from [I]so file. ${YELLOW}(r/i): ${NORMAL}"
+read FROM
+case "$FROM" in
+  "R" | "r")
+    # read path from user
+    echo "${CYAN}Enter path only to bzImage and tinycore.gz or microcore.gz."
+    echo -n "${WHITE}(EXAMPLE: ${YELLOW}/mnt/hda1/boot/): ${NORMAL}"
+    read BOOT
+    if [ -z "$BOOT" ] ; then
+      echo "No path entered. The script will be terminated."
+      abort
+    fi
+    [ -f "$BOOT"/bzImage ] || MISSING="$MISSING bzImage "
+    if [ -f "$BOOT"/tinycore.gz ]; then
+       ROOTFS="tinycore"
+    else
+       if [ -f "$BOOT"/microcore.gz ]; then
+	  ROOTFS="microcore"
+       else
+	 MISSING="$MISSING tinycore.gz and microcore.gz "
+       fi
+    fi
+    if [ -n "$MISSING" ]; then
+      echo "Could not find system file(s): $MISSING"
+      abort
+    fi
+  ;;
+  "I" | "i")
+    # read path from user
+    echo -n "${CYAN}Enter the full path to the iso.  ${WHITE}(EXAMPLE: ${YELLOW}/tmp/tinycore_2.1.iso): ${NORMAL}"
+    read SOURCE
+    if [ -z "$SOURCE" ] ; then
+      echo "No path entered. The script will be terminated."
+      abort
+    fi
+    if [ ! -f "$SOURCE" ]; then
+      echo "Cound not find: $SOURCE"
+      abort
+    fi
+    ROOTFS=${SOURCE%%_*}; ROOTFS=${ROOTFS##/*/}
+  ;;
+esac
+
+if [ -z "$BOOT" ]; then
+  # We need to mount the ISO file using the loopback driver.
+  # Start by creating a mount point directory; we'll call it "staging"
+  [ -d /mnt/staging ] || mkdir /mnt/staging
+  mount -t iso9660 -o loop,ro $SOURCE /mnt/staging
+  if [ $? != 0 ]; then
+    umount /mnt/pendrive  # unmount the target drive
+    echo "${RED}Sorry $SOURCE not found!"
+    echo "Installation not successful!${NORMAL}"
+    abort
+  fi
+  IMAGE="/mnt/staging"
+  BOOT="/mnt/staging/boot/"
+fi
+
+echo "${CYAN}List boot options: "
+echo -n "${WHITE}Example: ${YELLOW}vga=normal syslog ${NORMAL}: "
+read DAEMONS
+
+echo -n "${RED}Ready to proceed.${NORMAL} (y/..)? "
+read answer
+if [ "$answer" != "y" ]; then
+  echo "Aborted by user."
+  abort
+fi
+
+if [ "$INSTALL" == "i" ]; then
+  echo
+  echo "${RED}Last chance to exit before destroying all data on ${MAGENTA}/dev/$DEVICE${NORMAL}"
+  echo -n "${CYAN}Continue (y/..)?${NORMAL} "
+  read answer
+  if [ "$answer" != "y" ]; then
+    echo "Aborted.."
+    abort
+  fi
+  echo
+  case "$TYPE" in
+    "HDD") usbhdd_setup ;;
+    "ZIP") usbzip_setup ;;
+    "EXT") usbext_setup ;;
+  esac
+fi  # End of installation
+
+TARGETUUID=`/sbin/blkid -s UUID /dev/"$TARGET"|cut -f2 -d\ `
+case "$TYPE" in
+  "HDD") usbhdd_update ;;
+  "ZIP") usbzip_update ;;
+  "EXT") usbext_update ;;
+esac
+[ -n "$SOURCE" ] && umount /mnt/staging
+echo -n "Press Enter key to continue."; read gagme

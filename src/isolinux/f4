@@ -1,0 +1,18 @@
+Micro Core accepts the following additional boot time options:
+
+ microcore {cron|syslog}              Start various daemons at boot
+ microcore host=xxxx                  Set hostname to xxxx
+ microcore secure                     Set password
+ microcore protect                    Password Encrypted Backup
+ microcore noautologin                Skip automatic login
+ microcore tz=GMT+8                   Timezone tz=PST+8PDT,M3.2.0/2,M11.1.0/2
+ microcore user=abc                   Specify alternate user
+ microcore desktop=yyy                Specify alternate window manager
+ microcore laptop                     Force load laptop related modules
+ microcore embed                      Stay on initramfs
+ microcore nozswap                    Skip compressed swap in ram
+ microcore xvesa=800x600x32           Set Xvesa default screen resolution
+ microcore bkg=image.{jpg|png|gif}    Set background from /opt/backgrounds
+ microcore blacklist=ssb              Blacklist a single module
+ microcore multivt                    Allows for multiple virtual terminals
+ 

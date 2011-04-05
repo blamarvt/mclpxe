@@ -1,0 +1,66 @@
+#!/bin/sh
+# /etc/init.d/rc.shutdown - used by /etc/inittab to shutdown the system.
+#
+. /etc/init.d/tc-functions
+
+clear 
+
+# Sync all filesystems.
+echo "${BLUE}Syncing all filesystems."
+sync; sleep 1; sync; sleep 1
+
+if ! grep -q "noswap" /proc/cmdline; then
+   echo "${BLUE}Disabling swap space.${NORMAL}"
+   /sbin/swapoff -a 2>/dev/null
+fi
+
+# Kill all processes.
+echo "${RED}Killing all processes."
+killall5 && sleep 2
+echo "Terminating all processes."
+killall5 -9
+echo -n "${NORMAL}"
+
+for loop in $(/bin/mount | awk '/\/dev\/loop/{print substr($1,10,3)}'|sort -nr); do umount -d /dev/loop"$loop" 2>/dev/null; done
+
+if [ -s /tmp/audit_marked.lst ]; then
+   echo "${BLUE}Removing requested extensions:"
+   for F in `cat /tmp/audit_marked.lst`; do
+      echo "${YELLOW}$F"
+      rm -f "$F"*
+      FROMDIR=`dirname "$F"` && TCEDIR=${FROMDIR%/*}
+      EXTN=`basename "$F"`; APP=${EXTN%.tcz}
+      LIST="$TCEDIR"/copy2ram.lst; ONBOOT="$TCEDIR"/onboot.lst; XWBAR="$TCEDIR"/xwbar.lst
+      if grep -w "$EXTN" "$LIST" >/dev/null 2>&1; then sed -i '/'"$EXTN"'/d' "$LIST"; fi
+      if grep -w "$EXTN" "$ONBOOT" >/dev/null 2>&1; then sed -i '/'"$EXTN"'/d' "$ONBOOT"; fi
+      if grep -w "$EXTN" "$XWBAR" >/dev/null 2>&1; then sed -i '/'"$EXTN"'/d' "$XWBAR"; fi
+      [ -s "$FROMDIR"/tce.db ] && rm -f "$FROMDIR"/tce.db
+      [ -s "$FROMDIR"/tce.lst ] && rm -f "$FROMDIR"/tce.lst
+      rm -f "$TCEDIR"/ondemand/$APP* 2>/dev/null 
+   done
+   rm -f /tmp/audit_marked.lst
+   sync; sleep 1; sync; sleep 1
+   echo "${NORMAL}"
+fi
+
+# Umount filesystems.
+echo "${BLUE}Unmounting all filesystems. "
+echo -n "${NORMAL}"
+
+if [ -s /opt/.tce_dir ]; then
+   TCE=$(cat /opt/.tce_dir)
+   TCEMOUNT=${TCE%/*}
+   [ -z "$TCEMOUNT" ] || umount "$TCEMOUNT" 2>/dev/null
+fi
+
+if [ -s /opt/.backup_device ]; then
+   BACKUP=`cat /opt/.backup_device`
+   BACKUPDEVICE=/mnt/${BACKUP%/*}
+   /bin/umount "$BACKUPDEVICE" 2>/dev/null
+fi
+
+/bin/umount -arf >/dev/null 2>&1
+
+echo "Shutdown in progress."
+usleep_progress
+echo ""

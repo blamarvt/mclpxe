@@ -1,0 +1,11 @@
+# /etc/udev/rules.d/55-tc.rules: Rule definitions for TC. Copied from LFS.
+
+KERNEL=="rtc|rtc0",         MODE="0644"
+
+# Comms devices
+
+KERNEL=="ippp[0-9]*",       GROUP="staff"
+KERNEL=="isdn[0-9]*",       GROUP="staff"
+KERNEL=="isdnctrl[0-9]*",   GROUP="staff"
+KERNEL=="dcbri[0-9]*",      GROUP="staff"
+KERNEL=="ramzswap*",        GROUP="root",         MODE="0600"

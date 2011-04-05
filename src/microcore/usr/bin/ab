@@ -1,0 +1,67 @@
+#!/bin/sh
+# Tiny AppBrowser
+# (c) Robert Shingledecker 2009
+. /etc/init.d/tc-functions
+
+searchRepository() {
+  if [ ! -n "$ITEM" ] || [ ${ITEM:0:1} == "-" ]; then
+    echo -n "Enter search term, e.g. browser: "; read ITEM
+    [ ! -n "$ITEM" ] && exit
+  fi
+  search.sh "$ITEM"
+}
+whatProvides() {
+  if [ ! -n "$ITEM" ] || [ ${ITEM:0:1} == "-" ]; then
+    echo -n "Enter search term, e.g. iwconfig: "; read ITEM
+    [ ! -n "$ITEM" ] && exit
+  fi
+  provides.sh "$ITEM"
+}
+selectItem(){
+  select "Application Extension Browser" info.lst
+  EXTN="$(cat /tmp/select.ans)"
+  [ "$EXTN" == "q" ] && unset EXTN
+}
+displayInfo(){
+  if [ -n "$EXTN" ]; then
+    tce-fetch.sh "$EXTN".info
+    less "$EXTN".info
+    rm "$EXTN".info
+  fi
+}
+displayDepends(){
+  tce-fetch.sh "$EXTN".dep
+  less "$EXTN".dep
+  rm "$EXTN".dep
+}
+displayFiles(){
+  tce-fetch.sh "$EXTN".list
+  less "$EXTN".list
+  rm "$EXTN".list
+}
+# Main
+checknotroot
+TMPDIR=`mktemp -d -t`
+cd $TMPDIR
+ITEM="$1"
+searchRepository $ITEM
+selectItem
+displayInfo
+while true; do
+[ -n "$EXTN" ] && echo -n "I)nstall O)nDemand D)epends F)iles L)ist "
+echo -n "S)earch, P)rovides, or Q)uit: "; read -s -n1 ANS; echo
+case ${ANS} in
+  I|i) tce-load -w -i "$EXTN" ;;
+  O|o) tce-load -w "$EXTN" ;;
+  D|d) displayDepends ;;
+  F|f) displayFiles ;;
+  L|l) selectItem ;;
+  S|s) ITEM="" && searchRepository "$ITEM" && selectItem; displayInfo ;;
+  P|p) ITEM="" && whatProvides "$ITEM" && selectItem; displayInfo ;;
+  Q|q) break ;;
+  *) displayInfo ;;
+esac
+done
+rm info.lst
+cd - > /dev/null
+rm -rf $TMPDIR 2>/dev/null

@@ -1,0 +1,119 @@
+#!/bin/sh
+#(c) Robert Shingledecker 2009
+. /etc/init.d/tc-functions
+
+checkroot
+
+read USER < /etc/sysconfig/tcuser
+TCEINSTALLED="/usr/local/tce.installed"
+
+process_gz() {
+  if [ "$1" == "booting" ] && [ -n "$MYLIST" ]; then
+    echo "${GREEN}Skip loading of local .gz as requested by the use of lst boot option${NORMAL}".
+  else
+    FILELIST=`ls "$1"/*.gz`
+    cd /
+    for FILE in $FILELIST; do
+      zcat "$FILE" | cpio -idmu > /dev/null 2>&1
+    done
+    cd -
+    setupHome
+  fi
+}
+
+process() {
+  BASENAME=`basename "$FILE"`
+  APPNAME="${BASENAME%.tcz}"
+  [ -f "$TCEINSTALLED"/"$APPNAME" ] && return
+  FLAGS=" -i -b "
+  su "$USER" -c 'tce-load '"$FLAGS"' '"$FILE"
+  if [ -s /tmp/aberr ]; then
+     echo "occured while loading: " "$FILE" >> /tmp/aberr
+     exit 1
+  fi
+}
+
+for i in `cat /proc/cmdline`; do
+  case $i in
+    tce=*) TCE=${i#*=} ;;
+    lst=*) MYLIST=${i#*=} ;;
+  esac
+done
+
+# Process any .gzs before attempting to mount tce directory.
+# /opt/tce support provided only for the purpose of a remaster.
+if [ "$(ls -A "/opt/tce"/*.gz 2>/dev/null)" ]; then
+  process_gz "/opt/tce"
+fi
+
+[ -z "$TCE" ] && TCE="$(autoscan 'tce' 'd')"/tce
+if [ "$TCE" != "/tce" ]; then
+   TCE_DEVICE="${TCE%%/*}"
+   TCE_DIR="${TCE#*/}"
+   if [ "$TCE_DEVICE" = "$TCE_DIR" ]; then TCE_DIR="tce"; fi
+   find_mountpoint "$TCE_DEVICE"
+   if [ -n "$MOUNTPOINT" ]; then
+      if [ "$MOUNTED" == "yes" ]; then
+	 if [ ! -d "$MOUNTPOINT"/"$TCE_DIR"/optional ]; then
+	    mkdir -p "$MOUNTPOINT"/"$TCE_DIR"/optional
+	 fi
+      else
+	 mount "$MOUNTPOINT"
+	 if [ $? == 0 ]; then
+	    UMOUNT="yes"
+	    if [ ! -d "$MOUNTPOINT"/"$TCE_DIR"/optional ]; then
+	       mkdir -p "$MOUNTPOINT"/"$TCE_DIR"/optional
+	    fi
+	 fi
+      fi
+   fi
+else
+   MOUNTPOINT="/tmp"; TCE_DIR="tce"
+fi
+
+TCEDIR="$MOUNTPOINT"/"$TCE_DIR"
+echo "$MOUNTPOINT" > /etc/sysconfig/tce.mount
+echo "$TCEDIR" > /opt/.tce_dir
+chmod g+w /opt/.tce_dir
+chown -R "$USER".staff "$TCEINSTALLED"
+sync
+
+# Process any .gzs in tce directory before regular extensions.
+if [ "$(ls -A "$TCEDIR"/*.gz 2>/dev/null)" ]; then
+  process_gz "$TCEDIR"
+fi
+
+if [ -d "$TCEDIR"/optional/upgrade ] && [ "$(ls -A "$TCEDIR"/optional/upgrade 2>/dev/null)" ]; then
+  echo -n "${GREEN}Performing upgrade from $TCEDIR/optional/upgrade. ${NORMAL}"
+  yes y | cp -ai "$TCEDIR"/optional/upgrade/* "$TCEDIR"/optional/. 2>/dev/null && rm -rf "$TCEDIR"/optional/upgrade
+  echo "${YELLOW}Done.${NORMAL}"
+fi
+
+chown -R "$USER".staff "$TCEDIR" /opt/.tce_dir 2>/dev/null
+chmod -R g+w "$TCEDIR" /opt/.tce_dir 2>/dev/null
+sync
+
+if [ -d /opt/tce ] && [ "$(ls -A /opt/tce 2>/dev/null)" ]; then
+  TCEDIR=/opt/tce
+  LOADFROM="$TCEDIR"/optional
+  TARGETLIST="onboot.lst"
+  [ -e "$TCEDIR"/"$TARGETLIST" ] && for FILE in `cat "$TCEDIR"/"$TARGETLIST"`; do FILE="$LOADFROM/$FILE" && process; done
+fi
+
+if [ -s /opt/.tce_dir ]; then
+  TCEDIR="$(cat /opt/.tce_dir)"
+  LOADFROM="$TCEDIR"/optional
+  TARGETLIST="onboot.lst"
+  [ "$1" == "booting" ] && [ -n "$MYLIST" ] && TARGETLIST="$MYLIST"
+  ONBOOT="$TCEDIR"/"$TARGETLIST"
+  [ -s "$ONBOOT" ] && for FILE in `cat "$ONBOOT"`; do FILE="$LOADFROM/$FILE" && process; done
+fi
+if [ -e /etc/sysconfig/newmodules ]; then
+  /sbin/depmod -a 2>/dev/null
+  /sbin/udevadm trigger
+fi
+/sbin/ldconfig 2>/dev/null
+if [ -s /tmp/setup.lst ]; then
+  for F in `cat /tmp/setup.lst`; do "$F"; done
+  rm -f /tmp/setup.lst
+fi
