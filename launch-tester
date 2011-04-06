@@ -1,0 +1,25 @@
+#!/bin/bash
+
+BRIDGE=br10
+TAP=tap11
+ISO=$1
+
+if [ -n "$1" ]; then
+
+    sudo tunctl -t $TAP 2>&1 > /dev/null
+    sudo brctl addif $BRIDGE $TAP 
+    sudo ifconfig $TAP up
+
+    sudo qemu -cdrom $1 \
+        -net nic,model=e1000,macaddr=00:12:34:56:78:93 \
+        -net tap,ifname=$TAP,script=no,downscript=no
+
+    sudo tunctl -d $TAP 2>&1 > /dev/null
+
+else
+
+    echo "ISO argument required."
+    exit 1
+
+fi
+
