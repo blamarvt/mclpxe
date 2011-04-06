@@ -1,0 +1,16 @@
+#!/bin/sh
+
+TEMP_DIR=`mktemp -d`
+SRC_DIR=src
+
+`mkdir $TEMP_DIR/boot`
+`sudo gzip -rc $SRC_DIR/microcore > $TEMP_DIR/boot/microcore.gz`
+`sudo cp -a $SRC_DIR/bzImage $TEMP_DIR/boot`
+`sudo cp -a $SRC_DIR/isolinux $TEMP_DIR/boot`
+
+sudo mkisofs -l -J -V MicroCoreLinux \
+    -no-emul-boot -boot-load-size 4 \
+    -R -input-charset default  \
+    -boot-info-table -b isolinux/isolinux.bin \
+    -o microcore-pxe.iso \
+    -c isolinux/boot.cat $TEMP_DIR
