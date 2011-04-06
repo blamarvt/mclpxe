@@ -3,14 +3,26 @@
 TEMP_DIR=`mktemp -d`
 SRC_DIR=src
 
+echo "Temp dir: $TEMP_DIR"
 `mkdir $TEMP_DIR/boot`
-`sudo gzip -rc $SRC_DIR/microcore > $TEMP_DIR/boot/microcore.gz`
+
+echo "Creating microcore.gz..."
+cd $SRC_DIR/microcore
+`sudo find | \
+    sudo cpio -o -H newc 2>/dev/null | \
+    gzip -9 > $TEMP_DIR/boot/microcore.gz`
+cd ../..
+
+echo "Copying over bzImage..."
 `sudo cp -a $SRC_DIR/bzImage $TEMP_DIR/boot`
+
+echo "Copying over isolinux..."
 `sudo cp -a $SRC_DIR/isolinux $TEMP_DIR/boot`
 
+echo "Generating microcore-pxe.iso..."
 sudo mkisofs -l -J -V MicroCoreLinux \
     -no-emul-boot -boot-load-size 4 \
     -R -input-charset default  \
-    -boot-info-table -b isolinux/isolinux.bin \
+    -boot-info-table -b boot/isolinux/isolinux.bin \
     -o microcore-pxe.iso \
-    -c isolinux/boot.cat $TEMP_DIR
+    -c boot/isolinux/boot.cat $TEMP_DIR
