@@ -1,4 +1,4 @@
-default syslinux-4.03/com32/menu/vesamenu.c32
+default syslinux/com32/menu/vesamenu.c32
 prompt 0
 timeout 1000
 allowoptions 0

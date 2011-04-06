@@ -1,2 +1,13 @@
-#!/bin/sh
-sudo qemu -cdrom microcore-pxe.iso -net nic -net nic -net socket,mcast=230.0.0.1:1234
+#!/bin/bash
+
+BRIDGE=br10
+TAP=tap10
+
+sudo tunctl -t $TAP 2>&1 > /dev/null
+sudo ifconfig $TAP up
+sudo brctl addif $BRIDGE $TAP 
+
+sudo qemu -cdrom microcore-pxe.iso -net nic \
+    -net tap,ifname=$TAP,script=no,downscript=no
+
+sudo tunctl -d $TAP 2>&1 > /dev/null

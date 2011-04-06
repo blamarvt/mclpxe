@@ -20,7 +20,7 @@ echo "Copying over isolinux..."
 `sudo cp -a $SRC_DIR/isolinux $TEMP_DIR/boot`
 
 echo "Generating microcore-pxe.iso..."
-sudo mkisofs -l -J -V MicroCoreLinux \
+sudo mkisofs -quiet -l -J -V MicroCoreLinux \
     -no-emul-boot -boot-load-size 4 \
     -R -input-charset default  \
     -boot-info-table -b boot/isolinux/isolinux.bin \
